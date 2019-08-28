@@ -1,2 +1,2 @@
 # proxyreaper
-A fast proxy scraper and checker
+A fast and opensource proxy scraper and checker
