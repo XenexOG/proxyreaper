@@ -1,85 +1,109 @@
-from colorama import init, Fore
 import sys
 import os
 import requests
-from bs4 import BeautifulSoup
+import time
+import configparser
+import threading
+
 import proxyreaper
+from utils import *
 
 class check():
     def __init__(self):
-        self.checked = ''
+        config = configparser.ConfigParser()
+        config.read('config.cfg')
+
+        self.proxies_type = ''
         self.proxies_file = ''
-        self._type = ''
-        self.timeout = 0
+        self.test_url = config.get('checker', 'test_url')
+        self.file_dir = config.get('checker', 'file_dir')
+        self.threads = int(config.get('checker', 'threads'))
+        self.timeout = int(config.get('checker', 'timeout'))
+
+        self.dead = 0
+        self.alive = 0
+        self.to_check = []
+
         self.proxy_file()
 
     def proxy_file(self):
         os.system('cls')
-        self.proxies_file = input(Fore.BLUE + 'Enter the name of the file with the proxies: ' + Fore.WHITE)
+        print(self.proxies_file)
+        self.proxies_file = get('Enter the name of the file with the proxies: ')
         if not self.proxies_file:
             os.system('cls')
-            print(Fore.RED + 'Error: ' + Fore.WHITE + 'File specified does not exist. Please try again.')
+            error('Specified file does not exist. Please try again.')
             self.proxy_file()
         else:
             self.proxy_type()
 
     def proxy_type(self):
         os.system('cls')
-        print(Fore.BLUE + 'Please specify the type of the proxies')
-        print(Fore.RED + '[1] ' + Fore.WHITE + 'HTTP/S')
-        print(Fore.RED + '[2] ' + Fore.WHITE + 'SOCKS4')
-        print(Fore.RED + '[3] ' + Fore.WHITE + 'SOCKS5')
+        m = get('Please specify the type of the proxies\n' +\
+                red + '[' + blue + '1' + red + '] - ' + white + 'HTTP/S\n' +\
+                red + '[' + blue + '2' + red + '] - ' + white + 'SOCKS4\n' +\
+                red + '[' + blue + '3' + red + '] - ' + white + 'SOCKS5\n')
 
-        m = input(Fore.WHITE + '>')
         if m == '1':
-            self._type = 'http'
-            self.proxy_timeout()
+            self.proxies_type = 'http'
+            self.proxy_check()
         elif m == '2':
-            self._type = 'socks4'
-            self.proxy_timeout()
+            self.proxies_type = 'socks4'
+            self.proxy_check()
         elif m == '3':
-            self._type = 'socks5'
-            self.proxy_timeout()
+            self.proxies_type = 'socks5'
+            self.proxy_check()
         else:
             os.system('cls')
-            print(Fore.RED + 'ERROR: Input not recognised. Please retype and try again.')
+            error('ERROR: Input not recognised. Please retype and try again.')
             self.proxy_type()
-
-    def proxy_timeout(self):
-        os.system('cls')
-        self.timeout = input(Fore.BLUE + 'Enter the timeout (default 5): ' + Fore.WHITE)
-        if not self.timeout:
-            self.timeout = 5
-        
-        self.proxy_check()
 
     def proxy_check(self):
         os.system('cls')
-        print(Fore.BLUE + 'Started checking...')
 
-        dead = 0
+        checking = True
+
         with open(self.proxies_file, 'r') as f:
+            self.proxy_count = sum(1 for proxy in open(self.proxies_file))
+            action('Loaded {} proxies.'.format(self.proxy_count))
+            
             for proxy in f:
-                try:
-                    r = requests.get('https://google.com/', proxies={type}, timeout=self.timeout)
-                    r.raise_for_status()
-                except Exception as e:
-                    dead = dead + 1
-                    pass
-                else:
-                    self.checked = self.checked + proxy + '\n'
-            print(Fore.BLUE + 'Done.')
+                self.to_check.append(proxy.strip())
 
-        alive = 0
-        with open('checked-' + self.proxies_file, 'w') as f:
-            for proxy in self.checked:
-                f.write(proxy)
-                alive = alive + 1
-            print(Fore.BLUE + 'Done.')
+        action('Starting threads.')
 
-        os.system('cls')
+        threads = []
+        for i in range(self.threads):
+            threads.append(threading.Thread(target=self.check_proxies))
+            action('Starting thread {}'.format(i + 1))
+            threads[i].start()
+            time.sleep(0.25)
 
-        print(Fore.WHITE + '{} proxies '.format(alive) + Fore.RED + 'dead.')
-        print(Fore.WHITE + '{} proxies '.format(dead) + Fore.BLUE + 'alive.')
+        action('{} threads started.'.format(self.threads))
 
-        proxyreaper.proxyreaper()
+        while checking:
+            if len(threading.enumerate()) - 1 == 0:
+                checking = False
+            else:
+                os.system('cls')
+
+                action('{} proxies '.format(self.alive) + red + 'dead.')
+                action('{} proxies '.format(self.dead) + blue + 'alive.')
+
+                proxyreaper.proxyreaper()
+    
+    def check_proxies(self):
+        while len(self.to_check) > 0:
+            proxy = self.to_check[0]
+            self.to_check.pop(0)
+
+            alert('Checking {} | {} left | {} alive | {} dead'.format(proxy, len(self.to_check), self.alive, self.dead))
+            try:
+                requests.get(self.test_url, proxies={'http': self.proxies_type + '://' + proxy + '/'}, timeout=int(self.timeout))
+            except:
+                error('{} not working.'.format(proxy))
+                self.dead = self.dead + 1
+            else:
+                action('Found working proxy ({})'.format(proxy))
+                save_to_file(self.file_dir, proxy)
+                self.alive = self.alive + 1
