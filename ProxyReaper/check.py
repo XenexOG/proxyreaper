@@ -75,9 +75,12 @@ class check():
         threads = []
         for i in range(self.threads):
             threads.append(threading.Thread(target=self.check_proxies))
-            action('Starting thread {}'.format(i + 1))
+            threads[i].setDaemon(True)
             threads[i].start()
             time.sleep(0.25)
+        
+        for thread in threads:
+            thread.join()
 
         action('{} threads started.'.format(self.threads))
 
